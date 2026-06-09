@@ -1,380 +1,265 @@
-# Medium to Difficult SQL Interview Questions
+# KVS & NVS Interview SQL Queries Compilation
+## Actual Interview Queries, Scenarios, and Explanations
+
+This guide compiles the SQL queries most commonly asked in **Kendriya Vidyalaya (KVS)** and **Navodaya Vidyalaya (NVS)** PGT/TGT Computer Science interviews. It includes the sample schema, the target question, the SQL query, and a pedagogical explanation of how to walk the interviewers through your code.
 
 ---
 
-## Medium Level
+## 1. Practice Schema Setup
+Interviewers will often give you a basic schema on the board or ask you to assume one. We will use the following two tables for all sample queries:
 
-### 1. Find employees earning more than their department average
+### Table: `STUDENT`
+| Column Name | Data Type | Constraint |
+|---|---|---|
+| `RollNo` | INT | PRIMARY KEY, AUTO_INCREMENT |
+| `Name` | VARCHAR(50) | NOT NULL |
+| `Class` | VARCHAR(5) | NOT NULL |
+| `Gender` | CHAR(1) | CHECK (`Gender` IN ('M', 'F')) |
+| `City` | VARCHAR(30) | DEFAULT 'Delhi' |
+| `Stream` | VARCHAR(20) | e.g., 'Science', 'Commerce', 'Humanities' |
 
-```sql
-SELECT e.name, e.salary, e.department
-FROM employees e
-WHERE e.salary > (
-  SELECT AVG(salary)
-  FROM employees
-  WHERE department = e.department
-);
-```
-
-**Explanation:** A correlated subquery runs once per row — for each employee, it calculates the average salary of *that employee's* department and compares it. This tests understanding of correlated vs. non-correlated subqueries.
-
----
-
-### 2. Find departments with no employees
-
-```sql
-SELECT d.department_name
-FROM departments d
-LEFT JOIN employees e ON d.id = e.dept_id
-WHERE e.id IS NULL;
-```
-
-**Explanation:** LEFT JOIN includes all departments even if no employee matches. Filtering `WHERE e.id IS NULL` isolates departments with zero employees. This is the classic **anti-join** pattern.
+### Table: `MARKS`
+| Column Name | Data Type | Constraint |
+|---|---|---|
+| `RollNo` | INT | FOREIGN KEY REFERENCES `STUDENT(RollNo)` |
+| `Subject` | VARCHAR(30) | NOT NULL |
+| `Score` | INT | CHECK (`Score` BETWEEN 0 AND 100) |
 
 ---
 
-### 3. Get the top 3 earners per department
+## 2. String Manipulation & Pattern Matching
 
-```sql
-SELECT name, department, salary
-FROM (
-  SELECT name, department, salary,
-    DENSE_RANK() OVER (PARTITION BY department ORDER BY salary DESC) AS rnk
-  FROM employees
-) ranked
-WHERE rnk <= 3;
-```
+### Q1: Find all students whose name starts with 'S'.
+* **SQL Query:**
+  ```sql
+  SELECT * FROM STUDENT 
+  WHERE Name LIKE 'S%';
+  ```
+* **Explanation for Interviewers:** Use the `LIKE` operator for pattern matching. The `%` wildcard matches zero or more characters. Mention that it is case-insensitive in standard MySQL but case-sensitive in some other SQL dialects.
 
-**Explanation:** `DENSE_RANK()` assigns the same rank to ties and doesn't skip numbers (unlike `RANK()`). `PARTITION BY department` resets the ranking per department. Very commonly asked window function question.
+### Q2: Find all students whose name is exactly 5 characters long and ends with 'a'.
+* **SQL Query:**
+  ```sql
+  SELECT * FROM STUDENT 
+  WHERE Name LIKE '____a';  -- Exactly four underscores followed by 'a'
+  ```
+* **Explanation for Interviewers:** Explain that the underscore `_` matching operator represents exactly one character, while `%` represents any number of characters.
 
----
-
-### 4. Calculate month-over-month revenue growth
-
-```sql
-SELECT
-  month,
-  revenue,
-  LAG(revenue) OVER (ORDER BY month) AS prev_month_revenue,
-  ROUND(
-    100.0 * (revenue - LAG(revenue) OVER (ORDER BY month))
-    / LAG(revenue) OVER (ORDER BY month), 2
-  ) AS growth_pct
-FROM monthly_revenue;
-```
-
-**Explanation:** `LAG()` fetches the previous row's value in the ordered set. Dividing the difference by the previous value gives percentage growth. Tests window functions combined with arithmetic.
+### Q3: Find all students whose name has 'a' as the second character.
+* **SQL Query:**
+  ```sql
+  SELECT * FROM STUDENT 
+  WHERE Name LIKE '_a%';
+  ```
+* **Explanation for Interviewers:** The first character is matching any single character via `_`, the second character must be `a`, and any trailing characters are matched using `%`.
 
 ---
 
-### 5. Find consecutive available dates (gaps in bookings)
+## 3. Aggregations, Grouping & Filtering
 
-```sql
-SELECT a.date + INTERVAL '1 day' AS gap_start,
-       b.date - INTERVAL '1 day' AS gap_end
-FROM bookings a
-JOIN bookings b ON b.date = (
-  SELECT MIN(date) FROM bookings WHERE date > a.date
-)
-WHERE b.date > a.date + INTERVAL '1 day';
-```
+### Q4: Count the number of male and female students in each class.
+* **SQL Query:**
+  ```sql
+  SELECT Class, Gender, COUNT(*) AS Total
+  FROM STUDENT
+  GROUP BY Class, Gender
+  ORDER BY Class;
+  ```
+* **Explanation for Interviewers:** This is a composite grouping. Explain that `GROUP BY Class, Gender` first groups the rows by `Class`, and then within each class, groups them by `Gender`.
 
-**Explanation:** Detects "gaps" between consecutive booking dates by finding pairs where the next booking date is more than 1 day away. Tests date arithmetic and self-join reasoning.
+### Q5: Display the classes having more than 5 students.
+* **SQL Query:**
+  ```sql
+  SELECT Class, COUNT(*) AS TotalStudents
+  FROM STUDENT
+  GROUP BY Class
+  HAVING COUNT(*) > 5;
+  ```
+* **Key Interview Point:** Emphasize the difference between `WHERE` and `HAVING`. Explain that `WHERE` filters rows before grouping, and `HAVING` filters group statistics after aggregation. 
 
----
-
-### 6. Pivot rows into columns using CASE
-
-```sql
-SELECT
-  employee_id,
-  SUM(CASE WHEN month = 'Jan' THEN sales END) AS Jan,
-  SUM(CASE WHEN month = 'Feb' THEN sales END) AS Feb,
-  SUM(CASE WHEN month = 'Mar' THEN sales END) AS Mar
-FROM sales_data
-GROUP BY employee_id;
-```
-
-**Explanation:** Conditional aggregation simulates a pivot table without native `PIVOT` syntax. Each `CASE WHEN` filters rows for one category and `SUM` collapses them. Common in reporting scenarios.
-
----
-
-### 7. Cumulative distribution of salaries
-
-```sql
-SELECT name, salary,
-  CUME_DIST()    OVER (ORDER BY salary) AS cumulative_dist,
-  PERCENT_RANK() OVER (ORDER BY salary) AS percent_rank
-FROM employees;
-```
-
-**Explanation:** `CUME_DIST()` returns the fraction of rows with values ≤ the current row's value. `PERCENT_RANK()` = (rank - 1) / (total rows - 1). Used in statistical analysis of distributions.
+### Q6: Find the average score of each subject, but only include subjects where the average score is greater than 60.
+* **SQL Query:**
+  ```sql
+  SELECT Subject, AVG(Score) AS AverageScore
+  FROM MARKS
+  GROUP BY Subject
+  HAVING AVG(Score) > 60;
+  ```
 
 ---
 
-### 8. Find users who logged in on consecutive days
+## 4. Subqueries & Nested Queries
 
-```sql
-SELECT DISTINCT a.user_id
-FROM logins a
-JOIN logins b
-  ON a.user_id = b.user_id
-  AND b.login_date = a.login_date + INTERVAL '1 day';
-```
+### Q7: Find students who scored maximum marks in 'Math'.
+* **SQL Query:**
+  ```sql
+  SELECT RollNo, Score 
+  FROM MARKS 
+  WHERE Subject = 'Math' 
+    AND Score = (SELECT MAX(Score) FROM MARKS WHERE Subject = 'Math');
+  ```
+* **Explanation for Interviewers:** Point out that we cannot write `WHERE Score = MAX(Score)` directly because aggregate functions are not allowed in the `WHERE` clause. Therefore, we use a scalar subquery to find the maximum marks first.
 
-**Explanation:** Self-join on the same user where one login date is exactly 1 day after another detects consecutive-day logins. Classic streak-detection pattern.
+### Q8: Find students who scored more than the overall average marks across all subjects.
+* **SQL Query:**
+  ```sql
+  SELECT s.RollNo, s.Name, m.Subject, m.Score
+  FROM STUDENT s
+  INNER JOIN MARKS m ON s.RollNo = m.RollNo
+  WHERE m.Score > (SELECT AVG(Score) FROM MARKS);
+  ```
 
----
-
-## Difficult Level
-
-### 9. Islands and Gaps — group consecutive sequences
-
-```sql
-SELECT user_id,
-  MIN(login_date) AS streak_start,
-  MAX(login_date) AS streak_end,
-  COUNT(*)        AS streak_length
-FROM (
-  SELECT user_id, login_date,
-    login_date
-      - ROW_NUMBER() OVER (PARTITION BY user_id ORDER BY login_date) * INTERVAL '1 day'
-      AS grp
-  FROM logins
-) grouped
-GROUP BY user_id, grp
-ORDER BY user_id, streak_start;
-```
-
-**Explanation:** Subtracting `ROW_NUMBER() * 1 day` from each date produces the same "anchor" date for consecutive dates — creating a group key (`grp`). Rows in the same streak share the same `grp`. This is the classic **Islands & Gaps** pattern.
-
----
-
-### 10. Recursive CTE — organizational hierarchy
-
-```sql
-WITH RECURSIVE org_chart AS (
-  -- Base case: root node (CEO has no manager)
-  SELECT id, name, manager_id, 0 AS level
-  FROM employees
-  WHERE manager_id IS NULL
-
-  UNION ALL
-
-  -- Recursive step: join each employee to their manager
-  SELECT e.id, e.name, e.manager_id, oc.level + 1
-  FROM employees e
-  JOIN org_chart oc ON e.manager_id = oc.id
-)
-SELECT * FROM org_chart ORDER BY level, name;
-```
-
-**Explanation:** Recursive CTEs have a base case (anchor) and a recursive step that references the CTE itself. Starts from the root employee and traverses down the tree level by level. Tests deep understanding of CTEs and hierarchical data.
+### Q9: Find the names of students who did not appear in any exam.
+* **SQL Query (Using SUBQUERY):**
+  ```sql
+  SELECT Name 
+  FROM STUDENT 
+  WHERE RollNo NOT IN (SELECT DISTINCT RollNo FROM MARKS);
+  ```
+* **SQL Query (Using LEFT JOIN):**
+  ```sql
+  SELECT s.Name 
+  FROM STUDENT s
+  LEFT JOIN MARKS m ON s.RollNo = m.RollNo
+  WHERE m.RollNo IS NULL;
+  ```
+* **Key Interview Point:** Discuss why the `LEFT JOIN` approach is often more performant than `NOT IN` because of how database engines optimize anti-joins.
 
 ---
 
-### 11. Median salary (without MEDIAN function)
+## 5. Working with NULL Values
 
-```sql
-SELECT AVG(salary) AS median
-FROM (
-  SELECT salary,
-    ROW_NUMBER() OVER (ORDER BY salary) AS rn,
-    COUNT(*)     OVER ()                AS total
-  FROM employees
-) t
-WHERE rn IN (FLOOR((total + 1) / 2.0), CEIL((total + 1) / 2.0));
-```
-
-**Explanation:** There's no universal `MEDIAN()` in SQL. This finds the middle row(s) using `ROW_NUMBER()` and `COUNT()`, then averages them — handles both odd and even row counts correctly. Tests number theory combined with window functions.
+### Q10: Find students who have not been assigned to a Stream.
+* **Incorrect Query (Write this and show why it is wrong if asked):**
+  ```sql
+  SELECT * FROM STUDENT WHERE Stream = NULL; -- Returns 0 rows
+  ```
+* **Correct SQL Query:**
+  ```sql
+  SELECT * FROM STUDENT WHERE Stream IS NULL;
+  ```
+* **Explanation for Interviewers:** Explain that `NULL` is not a constant value or zero; it represents 'unknown' or 'missing' data. Standard comparison operators (`=`, `!=`, `<>`) yield `UNKNOWN` when compared with `NULL`. Hence, special operators standard is `IS NULL` or `IS NOT NULL`.
 
 ---
 
-### 12. Find the longest streak of wins
+## 6. Table Relationships & JOINs
 
-```sql
-WITH ranked AS (
-  SELECT player_id, match_date, result,
-    ROW_NUMBER() OVER (PARTITION BY player_id ORDER BY match_date) -
-    ROW_NUMBER() OVER (PARTITION BY player_id, result ORDER BY match_date) AS grp
-  FROM match_results
-),
-streaks AS (
-  SELECT player_id, result, COUNT(*) AS streak_len
-  FROM ranked
-  WHERE result = 'Win'
-  GROUP BY player_id, result, grp
-)
-SELECT player_id, MAX(streak_len) AS longest_win_streak
-FROM streaks
-GROUP BY player_id;
-```
+### Q11: Display the Name, Class, Subject, and Marks of all students.
+* **SQL Query:**
+  ```sql
+  SELECT s.Name, s.Class, m.Subject, m.Score
+  FROM STUDENT s
+  INNER JOIN MARKS m ON s.RollNo = m.RollNo;
+  ```
+* **Explanation for Interviewers:** An `INNER JOIN` matches rows that have common `RollNo` values in both tables. Students who have not given exams, or exam marks that don't match any student (e.g., orphan records), will be excluded.
 
-**Explanation:** The **double ROW_NUMBER trick** — subtracting row numbers with and without partitioning on `result` produces the same group key for consecutive same-result rows. Counting per group gives streak length.
+### Q12: Display all students' names and their marks, including those students who didn't appear for any exams.
+* **SQL Query:**
+  ```sql
+  SELECT s.Name, m.Subject, IFNULL(m.Score, 0) AS Score
+  FROM STUDENT s
+  LEFT JOIN MARKS m ON s.RollNo = m.RollNo;
+  ```
+* **Explanation for Interviewers:** A `LEFT JOIN` returns all records from the left table (`STUDENT`), even if there are no corresponding matches in the right table (`MARKS`). If there are no marks, `m.Subject` and `m.Score` will return `NULL`. We can use `IFNULL` (or `COALESCE` in standard SQL) to represent `NULL` as `0`.
 
 ---
 
-### 13. Running total that resets per partition
+## 7. Advanced / Critical Queries
 
-```sql
-SELECT order_id, amount, category,
-  SUM(amount) OVER (
-    PARTITION BY category
-    ORDER BY order_date
-    ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
-  ) AS running_total_by_category
-FROM orders;
-```
+### Q13: Find the 2nd Highest Score in the school.
+* **SQL Query (Standard Subquery — SQL dialect safe):**
+  ```sql
+  SELECT MAX(Score) AS SecondHighest 
+  FROM MARKS
+  WHERE Score < (SELECT MAX(Score) FROM MARKS);
+  ```
+* **SQL Query (Using MySql position manipulation):**
+  ```sql
+  SELECT DISTINCT Score 
+  FROM MARKS 
+  ORDER BY Score DESC 
+  LIMIT 1 OFFSET 1;
+  ```
 
-**Explanation:** `PARTITION BY category` resets the running total for each category. `ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW` explicitly defines the window frame. Tests precise window frame specification.
+### Q14: Find the N-th Highest Score (General Query).
+* **SQL Query:**
+  ```sql
+  SELECT DISTINCT Score 
+  FROM MARKS m1
+  WHERE N-1 = (
+      SELECT COUNT(DISTINCT Score) 
+      FROM MARKS m2 
+      WHERE m2.Score > m1.Score
+  );
+  ```
+* **Explanation for Interviewers:** This is a **Correlated Subquery**. For every row evaluated by the outer query, the inner query counts how many distinct scores are higher than it. When the count of higher scores equals `N-1`, we have found the Nth highest score.
 
----
-
-### 14. Detect duplicate transactions within a time window
-
-```sql
-SELECT t1.transaction_id AS duplicate_id,
-       t2.transaction_id AS original_id
-FROM transactions t1
-JOIN transactions t2
-  ON  t1.user_id        = t2.user_id
-  AND t1.amount         = t2.amount
-  AND t1.transaction_id > t2.transaction_id
-  AND t1.created_at BETWEEN t2.created_at
-                        AND t2.created_at + INTERVAL '5 minutes';
-```
-
-**Explanation:** Self-join finds two transactions by the same user for the same amount within 5 minutes. `t1.id > t2.id` prevents matching a row with itself and avoids duplicating result pairs. Real-world fraud detection pattern.
-
----
-
-### 15. Allocate budget — greedy first-fit
-
-```sql
-WITH cumulative AS (
-  SELECT project_id, cost,
-    SUM(cost) OVER (ORDER BY priority ROWS UNBOUNDED PRECEDING) AS cumulative_cost
-  FROM projects
-)
-SELECT project_id, cost, cumulative_cost
-FROM cumulative
-WHERE cumulative_cost <= 1000000; -- budget cap
-```
-
-**Explanation:** Cumulative sum with window frames lets you greedily select projects in priority order until the budget is exhausted. Tests applied use of window frames for optimization problems.
+### Q15: Delete duplicate records based on Student Name but keep the one with the lowest RollNo.
+* **SQL Query:**
+  ```sql
+  DELETE FROM STUDENT 
+  WHERE RollNo NOT IN (
+      SELECT * FROM (
+          SELECT MIN(RollNo) 
+          FROM STUDENT 
+          GROUP BY Name
+      ) AS Temp
+  );
+  ```
+* **Key Interview Point:** In MySQL, you cannot directly delete from a table you're selecting from in a subquery. Creating a nested subquery alias (`AS Temp`) creates a temporary table that allows the execution to update successfully.
 
 ---
 
-### 16. Compare two snapshots — find added/deleted/modified rows
+## 8. Ranking & Analytical Window Functions
+> *(Increasingly asked in both TGT and PGT CS interviews to check depth of knowledge)*
 
-```sql
-SELECT
-  COALESCE(n.id, o.id) AS id,
-  CASE
-    WHEN o.id IS NULL THEN 'Added'
-    WHEN n.id IS NULL THEN 'Deleted'
-    ELSE 'Modified'
-  END AS change_type,
-  o.salary AS old_salary,
-  n.salary AS new_salary
-FROM employees_snapshot_new  n
-FULL OUTER JOIN employees_snapshot_old o ON n.id = o.id
-WHERE n.salary IS DISTINCT FROM o.salary
-   OR n.id IS NULL
-   OR o.id IS NULL;
-```
-
-**Explanation:** `FULL OUTER JOIN` captures rows that exist in only one snapshot. `IS DISTINCT FROM` handles NULLs safely (unlike `!=`). Used in data audit and change-data-capture (CDC) scenarios.
+### Q16: Rank students based on their total marks.
+* **SQL Query:**
+  ```sql
+  SELECT RollNo, 
+         SUM(Score) AS TotalMarks,
+         RANK() OVER (ORDER BY SUM(Score) DESC) AS StudentRank,
+         DENSE_RANK() OVER (ORDER BY SUM(Score) DESC) AS StudentDenseRank
+  FROM MARKS
+  GROUP BY RollNo;
+  ```
+* **Explanation showing Difference between `RANK()` and `DENSE_RANK()`:**
+  If two students are tied for rank 1:
+  * `RANK()` will outputs ranks as: `1, 1, 3, 4` (it skips rank 2 because of duplicate ties).
+  * `DENSE_RANK()` will outputs ranks as: `1, 1, 2, 3` (no ranks are skipped).
 
 ---
 
-### 17. Sessionization — group events into sessions
+## 9. Data Definition (DDL) Queries
 
-```sql
-WITH gaps AS (
-  SELECT user_id, event_time,
-    CASE
-      WHEN event_time - LAG(event_time) OVER (PARTITION BY user_id ORDER BY event_time)
-           > INTERVAL '30 minutes'
-      THEN 1 ELSE 0
-    END AS new_session
-  FROM events
-),
-sessions AS (
-  SELECT user_id, event_time,
-    SUM(new_session) OVER (PARTITION BY user_id ORDER BY event_time) AS session_id
-  FROM gaps
-)
-SELECT user_id, session_id,
-  MIN(event_time) AS session_start,
-  MAX(event_time) AS session_end,
-  COUNT(*)        AS event_count
-FROM sessions
-GROUP BY user_id, session_id;
-```
+### Q17: Create a table 'TEACHER' where 'TeacherID' is primary key, and 'Salary' cannot be negative.
+* **SQL Query:**
+  ```sql
+  CREATE TABLE TEACHER (
+      TeacherID INT AUTO_INCREMENT,
+      Name VARCHAR(60) NOT NULL,
+      Subject VARCHAR(35),
+      Salary DECIMAL(10,2) CHECK (Salary >= 0),
+      Email VARCHAR(100) UNIQUE,
+      PRIMARY KEY (TeacherID)
+  );
+  ```
 
-**Explanation:** A gap > 30 minutes marks the start of a new session (`new_session = 1`). `SUM(new_session) OVER (...)` accumulates these flags into an incrementing session number. Grouping gives session-level metrics. Classic product analytics pattern.
+### Q18: Add a new column 'PhoneNo' of type VARCHAR(15) to an existing table.
+* **SQL Query:**
+  ```sql
+  ALTER TABLE STUDENT 
+  ADD PhoneNo VARCHAR(15);
+  ```
 
----
-
-### 18. Weighted moving average
-
-```sql
-SELECT date, price,
-  SUM(price * weight) OVER (ORDER BY date ROWS BETWEEN 2 PRECEDING AND CURRENT ROW) /
-  SUM(weight)         OVER (ORDER BY date ROWS BETWEEN 2 PRECEDING AND CURRENT ROW) AS wma_3day
-FROM (
-  SELECT date, price,
-    ROW_NUMBER() OVER (ORDER BY date) AS weight
-  FROM stock_prices
-) weighted;
-```
-
-**Explanation:** Assigns increasing weights using `ROW_NUMBER()` and computes a weighted average over a 3-row sliding window. Tests advanced window frame arithmetic used in financial time-series analysis.
+### Q19: Change the data type of column 'Stream' in table 'STUDENT' from VARCHAR(20) to VARCHAR(35).
+* **SQL Query:**
+  ```sql
+  ALTER TABLE STUDENT 
+  MODIFY Stream VARCHAR(35);
+  ```
 
 ---
 
-### 19. Find all pairs with a given sum
-
-```sql
-SELECT a.id AS id1, b.id AS id2, a.value + b.value AS total
-FROM numbers a
-JOIN numbers b
-  ON  a.id < b.id
-  AND a.value + b.value = 100;
-```
-
-**Explanation:** `a.id < b.id` prevents duplicate pairs (A,B) and (B,A) and avoids self-matching. Joining a table to itself and filtering on sum tests self-join reasoning — common in combinatorics and algorithmic SQL problems.
-
----
-
-### 20. Slowly Changing Dimension (SCD Type 2) — get current record
-
-```sql
--- Option A: NULL end_date marks the current record
-SELECT * FROM employee_history
-WHERE end_date IS NULL;
-
--- Option B: effective date range covers today
-SELECT * FROM employee_history
-WHERE CURRENT_DATE BETWEEN effective_date AND COALESCE(expiry_date, '9999-12-31');
-```
-
-**Explanation:** SCD Type 2 stores historical versions of a record with date ranges. The "current" version either has `end_date = NULL` or a date range that covers today. Fundamental concept in data warehousing interviews.
-
----
-
-## Key Concepts Summary
-
-| Concept | Key Functions / Patterns |
-|---|---|
-| Window Functions | `ROW_NUMBER`, `RANK`, `DENSE_RANK`, `LAG`, `LEAD`, `SUM OVER` |
-| Gaps & Islands | Double `ROW_NUMBER` subtraction trick |
-| Hierarchical Data | Recursive CTEs |
-| Anti-Join | `LEFT JOIN ... WHERE right.id IS NULL` |
-| Pivoting | `CASE WHEN` + `SUM` / `GROUP BY` |
-| Sessionization | `LAG` + cumulative `SUM OVER` |
-| Change Detection | `FULL OUTER JOIN` + `IS DISTINCT FROM` |
-| Streak Detection | Islands & Gaps + result filter |
-| Median | `ROW_NUMBER` + middle-row selection |
-| SCD Type 2 | Date range or NULL end-date pattern |
+*Keep this reference sheet handy when reviewing! You can copy-paste the DDL lines to practice these queries on your local terminal or online editors.*
+MySQL command line client before the interview.*
